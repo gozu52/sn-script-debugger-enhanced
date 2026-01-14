@@ -1,12 +1,47 @@
 /**
  * コンテキストヘルパー
  * ServiceNowページから現在のコンテキスト情報を抽出
+ * Classic UI と Modern UI (Polaris) の両方に対応
  */
 
 export class ContextHelper {
   constructor() {
     this.cache = new Map();
-    this.cacheTimeout = 5000; // 5秒
+    this.cacheTimeout = 5000;
+  }
+
+  /**
+   * 現在のユーザー情報を取得
+   * @returns {object|null}
+   */
+  getCurrentUser() {
+    return this.getCached('user', () => {
+      // Modern UI (Polaris/Next Experience)
+      if (window.NOW && window.NOW.user) {
+        return {
+          userName: window.NOW.user.userName || null,
+          userID: window.NOW.user.userID || null,
+          firstName: window.NOW.user.firstName || null,
+          lastName: window.NOW.user.lastName || null,
+          email: window.NOW.user.email || null,
+          roles: window.NOW.user.roles || [],
+        };
+      }
+      
+      // Classic UI
+      if (window.g_user) {
+        return {
+          userName: window.g_user.userName,
+          userID: window.g_user.userID,
+          firstName: window.g_user.firstName,
+          lastName: window.g_user.lastName,
+          email: window.g_user.email,
+          roles: window.g_user.roles,
+        };
+      }
+      
+      return null;
+    });
   }
 
   /**
@@ -31,6 +66,11 @@ export class ContextHelper {
       const listTable = document.querySelector('[data-list-table]');
       if (listTable) {
         return listTable.getAttribute('data-list-table');
+      }
+
+      // 方法4: Modern UI
+      if (window.NOW && window.NOW.context && window.NOW.context.table) {
+        return window.NOW.context.table;
       }
 
       return null;
@@ -61,171 +101,27 @@ export class ContextHelper {
   }
 
   /**
-   * 現在のユーザー情報を取得
-   * @returns {object|null}
-   */
-  getCurrentUser() {
-    return this.getCached('user', () => {
-      if (window.g_user) {
-        return {
-          userName: window.g_user.userName,
-          userID: window.g_user.userID,
-          firstName: window.g_user.firstName,
-          lastName: window.g_user.lastName,
-          email: window.g_user.email,
-          roles: window.g_user.roles,
-        };
-      }
-      return null;
-    });
-  }
-
-  /**
-   * 現在のビュー名を取得
-   * @returns {string|null}
-   */
-  getCurrentView() {
-    return this.getCached('view', () => {
-      const viewInput = document.querySelector('input[name="sysparm_view"]');
-      if (viewInput?.value) {
-        return viewInput.value;
-      }
-
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get('sysparm_view') || 'default';
-    });
-  }
-
-  /**
-   * 現在のアプリケーションスコープを取得
-   * @returns {string|null}
-   */
-  getCurrentScope() {
-    return this.getCached('scope', () => {
-      // Application Picker から取得
-      const scopeElement = document.querySelector('[data-current-scope]');
-      if (scopeElement) {
-        return scopeElement.getAttribute('data-current-scope');
-      }
-
-      // グローバル変数から取得
-      if (window.NOW?.context?.appScope) {
-        return window.NOW.context.appScope;
-      }
-
-      return 'global';
-    });
-  }
-
-  /**
-   * ページタイプを取得
-   * @returns {string}
-   */
-  getPageType() {
-    return this.getCached('pageType', () => {
-      const path = window.location.pathname;
-
-      if (path.includes('_list.do')) {
-        return 'list';
-      } else if (path.includes('.do') && this.getCurrentRecordId()) {
-        return 'form';
-      } else if (path.includes('sp?')) {
-        return 'service_portal';
-      } else if (path.includes('nav_to.do')) {
-        return 'navigation';
-      } else if (path.includes('sys_ui_page.do')) {
-        return 'ui_page';
-      } else if (path.includes('$pa_dashboard.do')) {
-        return 'dashboard';
-      }
-
-      return 'unknown';
-    });
-  }
-
-  /**
-   * Service Portalのページ情報を取得
-   * @returns {object|null}
-   */
-  getServicePortalInfo() {
-    return this.getCached('spInfo', () => {
-      if (!window.location.pathname.includes('sp')) {
-        return null;
-      }
-
-      const urlParams = new URLSearchParams(window.location.search);
-
-      return {
-        portal: urlParams.get('id') || 'sp',
-        page: urlParams.get('page'),
-        table: urlParams.get('table'),
-        sysId: urlParams.get('sys_id'),
-      };
-    });
-  }
-
-  /**
-   * レコードの表示値を取得
-   * @returns {string|null}
-   */
-  getRecordDisplayValue() {
-    return this.getCached('displayValue', () => {
-      // フォームのタイトル
-      const titleElement = document.querySelector('.form-title, [data-title]');
-      if (titleElement) {
-        return titleElement.textContent.trim();
-      }
-
-      // Number フィールド
-      const numberInput = document.querySelector('input[name="number"]');
-      if (numberInput?.value) {
-        return numberInput.value;
-      }
-
-      return null;
-    });
-  }
-
-  /**
    * セッション情報を取得
    * @returns {object}
    */
   getSessionInfo() {
+    // Classic UI
+    if (window.g_ck) {
+      return {
+        sessionId: window.g_ck,
+        hasSession: true,
+        language: window.g_user?.language || navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    }
+    
+    // Modern UI
     return {
-      sessionId: window.g_ck || null,
-      hasSession: typeof window.g_ck !== 'undefined',
-      language: window.g_user?.language || navigator.language,
+      sessionId: window.NOW?.session?.token || null,
+      hasSession: !!(window.NOW?.user),
+      language: window.NOW?.user?.language || navigator.language,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-  }
-
-  /**
-   * インスタンス情報を取得
-   * @returns {object}
-   */
-  getInstanceInfo() {
-    return {
-      url: window.location.origin,
-      hostname: window.location.hostname,
-      instanceName: window.location.hostname.split('.')[0],
-      environment: this.getEnvironmentType(),
-    };
-  }
-
-  /**
-   * 環境タイプを判定
-   * @returns {string}
-   */
-  getEnvironmentType() {
-    const hostname = window.location.hostname;
-
-    if (hostname.includes('dev')) return 'development';
-    if (hostname.includes('test')) return 'test';
-    if (hostname.includes('uat')) return 'uat';
-    if (hostname.includes('stage')) return 'staging';
-    if (hostname.includes('prod')) return 'production';
-
-    return 'unknown';
   }
 
   /**
@@ -236,23 +132,14 @@ export class ContextHelper {
     return {
       table: this.getCurrentTable(),
       recordId: this.getCurrentRecordId(),
-      displayValue: this.getRecordDisplayValue(),
-      view: this.getCurrentView(),
-      scope: this.getCurrentScope(),
-      pageType: this.getPageType(),
       user: this.getCurrentUser(),
       session: this.getSessionInfo(),
-      instance: this.getInstanceInfo(),
-      servicePortal: this.getServicePortalInfo(),
       timestamp: Date.now(),
     };
   }
 
   /**
-   * キャッシュから取得（キャッシュがなければ計算）
-   * @param {string} key
-   * @param {Function} calculator
-   * @returns {any}
+   * キャッシュから取得
    */
   getCached(key, calculator) {
     const cached = this.cache.get(key);
@@ -270,21 +157,9 @@ export class ContextHelper {
     return value;
   }
 
-  /**
-   * キャッシュをクリア
-   */
   clearCache() {
     this.cache.clear();
   }
-
-  /**
-   * 特定のキャッシュを削除
-   * @param {string} key
-   */
-  invalidateCache(key) {
-    this.cache.delete(key);
-  }
 }
 
-// シングルトンインスタンス
 export const contextHelper = new ContextHelper();
